@@ -45,6 +45,12 @@ Rails.application.routes.draw do
             post   :calibration_participants,         action: :add_calibration_participant
             delete 'calibration_participants/:participant_id', action: :remove_calibration_participant
           end
+
+          # DEMO_INSTRUCTOR_RESPONSE — remove once the real review form ships
+          member do
+            post :mock_instructor_response,
+                 to: 'demo/calibration_instructor_responses#create'
+          end
         end
 
         # Reports are owned by ReportsController, not by feature controllers.
