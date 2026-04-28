@@ -33,7 +33,7 @@ module Reimplementation
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
     if ENV['CACHE_STORE'].present?
-      config.cache_store = :redis_store, ENV['CACHE_STORE'], { expires_in: 3.days, raise_errors: false }
+      config.cache_store = :redis_cache_store, { url: ENV['CACHE_STORE'], expires_in: 3.days }
     end
   end
 end
