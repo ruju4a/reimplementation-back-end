@@ -1,6 +1,6 @@
 #!/bin/bash
 
-until nc -z -v -w30 db 3306 
+until bash -c "echo > /dev/tcp/db/3306" 2>/dev/null
 do
   echo "Waiting for database connection..."
   sleep 5
