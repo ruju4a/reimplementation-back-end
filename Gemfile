@@ -59,11 +59,13 @@ gem 'find_with_order'
 gem 'rubyzip'
 
 
+# Used by db/seeds.rb (runs in production on deploy)
+gem 'faker'
+
 group :development, :test do
   gem 'debug', platforms: %i[mri mingw x64_mingw]
   gem 'factory_bot_rails'
   gem 'database_cleaner-active_record'
-  gem 'faker'
   gem 'rspec-rails'
   gem 'rswag-specs'
   gem 'rubocop'
