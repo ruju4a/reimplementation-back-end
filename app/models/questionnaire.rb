@@ -4,7 +4,7 @@ class Questionnaire < ApplicationRecord
   belongs_to :instructor
   # the collection of items associated with this Questionnaire
   has_many :items, class_name: 'Item', foreign_key: 'questionnaire_id', dependent: :destroy
-  before_destroy :check_for_item_associations
+  before_destroy :any_item_associations?
 
   validate :validate
   validates :name, presence: true
@@ -29,7 +29,7 @@ class Questionnaire < ApplicationRecord
     participant.reviews
   end
 
-  # Validates min < max ordering and name uniqueness per instructor.
+  # Validates min < max and name uniqueness per instructor.
   def validate
     if min_question_score >= max_question_score
       errors.add(:min_question_score, 'The minimum item score must be less than the maximum.')
@@ -51,8 +51,11 @@ class Questionnaire < ApplicationRecord
   end
 
   # Raises an error if the questionnaire has associated items.
-  def check_for_item_associations
-    raise ActiveRecord::DeleteRestrictionError, 'Cannot delete questionnaire because at least one assignment uses it.' if items.any?
+  def any_item_associations?
+    return unless items.any?
+
+    raise ActiveRecord::DeleteRestrictionError,
+          'Cannot delete questionnaire because at least one assignment uses it.'
   end
 
   def as_json(options = {})
@@ -67,8 +70,8 @@ class Questionnaire < ApplicationRecord
     end
   end
 
-  DEFAULT_MIN_QUESTION_SCORE = 0  # The lowest score that a reviewer can assign to any item
-  DEFAULT_MAX_QUESTION_SCORE = 5  # The highest score that a reviewer can assign to any item
+  DEFAULT_MIN_ITEM_SCORE = 0  # The lowest score that a reviewer can assign to any item
+  DEFAULT_MAX_ITEM_SCORE = 5  # The highest score that a reviewer can assign to any item
   QUESTIONNAIRE_TYPES = ['ReviewQuestionnaire',
                          'MetareviewQuestionnaire',
                          'Author FeedbackQuestionnaire',
@@ -121,5 +124,4 @@ class Questionnaire < ApplicationRecord
                               .where('questionnaires.id = ?', id)
     score_rows[0].max_score
   end
-
 end
