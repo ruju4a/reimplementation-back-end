@@ -2,34 +2,27 @@
 
 class Questionnaire < ApplicationRecord
   belongs_to :instructor
-  has_many :items, class_name: "Item", foreign_key: "questionnaire_id", dependent: :destroy # the collection of items associated with this Questionnaire
+  has_many :items, class_name: "Item", foreign_key: "questionnaire_id", dependent: :destroy
   before_destroy :check_for_question_associations
+
+  # Subclasses declare @print_name = '...' and inherit this reader automatically.
+  class << self
+    attr_reader :print_name
+  end
 
   validate :validate_questionnaire
   validates :name, presence: true
-  validates :max_question_score, :min_question_score, numericality: true 
-  
+  validates :max_question_score, :min_question_score, numericality: true
 
-  # after_initialize :post_initialization
-    # @print_name = 'Review Rubric'
-  
-    # class << self
-    #   attr_reader :print_name
-    # end
-  
-    # def post_initialization
-    #   self.display_type = 'Review'
-    # end
-  
-    def symbol
-      'review'.to_sym
-    end
-  
-    def get_assessments_for(participant)
-      participant.reviews
-    end
-    
-  # validate the entries for this questionnaire
+  # Scored rubric subclasses must override these.
+  def symbol
+    raise NotImplementedError, "#{self.class}#symbol not implemented"
+  end
+
+  def get_assessments_for(_participant)
+    raise NotImplementedError, "#{self.class}#get_assessments_for not implemented"
+  end
+
   def validate_questionnaire
     errors.add(:max_question_score, 'The maximum item score must be a positive integer.') if max_question_score < 1
     errors.add(:min_question_score, 'The minimum item score must be a positive integer.') if min_question_score < 0
@@ -38,7 +31,7 @@ class Questionnaire < ApplicationRecord
     errors.add(:name, 'Questionnaire names must be unique.') if results.present?
   end
 
-  # clones the contents of a questionnaire, including the items and associated advice
+  # Duplicates a questionnaire along with its items and advice.
   def self.copy_questionnaire_details(params)
     orig_questionnaire = Questionnaire.find(params[:id])
     items = Item.where(questionnaire_id: params[:id])
@@ -64,84 +57,69 @@ class Questionnaire < ApplicationRecord
     questionnaire
   end
 
-    # Check_for_question_associations checks if questionnaire has associated items or not
-    def check_for_question_associations
-      if items.any?
-        raise ActiveRecord::DeleteRestrictionError.new( "Cannot delete record because dependent items exist")
-      end
+  def check_for_question_associations
+    if items.any?
+      raise ActiveRecord::DeleteRestrictionError.new("Cannot delete record because dependent items exist")
     end
+  end
 
-    def as_json(options = {})
-        super(options.merge({
-                              only: %i[id name private min_question_score max_question_score created_at updated_at questionnaire_type instructor_id],
-                              include: {
-                                instructor: { only: %i[name email fullname password role]
-                              }
-                              }
-                            })).tap do |hash|
-          hash['instructor'] ||= { id: nil, name: nil }
-        end
+  def as_json(options = {})
+    super(options.merge({
+      only: %i[id name private min_question_score max_question_score created_at updated_at questionnaire_type instructor_id],
+      include: {
+        instructor: { only: %i[name email fullname password role] }
+      }
+    })).tap do |hash|
+      hash['instructor'] ||= { id: nil, name: nil }
     end
+  end
 
-    DEFAULT_MIN_QUESTION_SCORE = 0  # The lowest score that a reviewer can assign to any questionnaire question
-    DEFAULT_MAX_QUESTION_SCORE = 5  # The highest score that a reviewer can assign to any questionnaire question
-    DEFAULT_QUESTIONNAIRE_URL = 'http://www.courses.ncsu.edu/csc517'.freeze
-    QUESTIONNAIRE_TYPES = ['ReviewQuestionnaire',
-                          'MetareviewQuestionnaire',
-                          'Author FeedbackQuestionnaire',
-                          'AuthorFeedbackQuestionnaire',
-                          'Teammate ReviewQuestionnaire',
-                          'TeammateReviewQuestionnaire',
-                          'SurveyQuestionnaire',
-                          'AssignmentSurveyQuestionnaire',
-                          'Assignment SurveyQuestionnaire',
-                          'Global SurveyQuestionnaire',
-                          'GlobalSurveyQuestionnaire',
-                          'Course SurveyQuestionnaire',
-                          'CourseSurveyQuestionnaire',
-                          'Bookmark RatingQuestionnaire',
-                          'BookmarkRatingQuestionnaire',
-                          'QuizQuestionnaire'].freeze
-    # has_paper_trail
+  DEFAULT_MIN_QUESTION_SCORE = 0
+  DEFAULT_MAX_QUESTION_SCORE = 5
+  DEFAULT_QUESTIONNAIRE_URL = 'http://www.courses.ncsu.edu/csc517'.freeze
 
-    def get_weighted_score(assignment, scores)
-      # create symbol for "varying rubrics" feature -Yang
-      round = AssignmentQuestionnaire.find_by(assignment_id: assignment.id, questionnaire_id: id).used_in_round
-      questionnaire_symbol = if round.nil?
-                              symbol
-                            else
-                              (symbol.to_s + round.to_s).to_sym
-                            end
-      compute_weighted_score(questionnaire_symbol, assignment, scores)
+  QUESTIONNAIRE_TYPES = [
+    'ReviewQuestionnaire',
+    'AuthorFeedbackQuestionnaire',
+    'BookmarkRatingQuestionnaire',
+    'QuizQuestionnaire',
+    'SurveyQuestionnaire',
+    'CourseEvaluationQuestionnaire',
+    'TeammateReviewQuestionnaire',
+    'GlobalSurveyQuestionnaire'
+  ].freeze
+
+  # Computes the weighted score for this questionnaire within an assignment,
+  # accounting for multi-round rubrics via a round suffix on the symbol.
+  def get_weighted_score(assignment, scores)
+    round = AssignmentQuestionnaire.find_by(assignment_id: assignment.id, questionnaire_id: id).used_in_round
+    questionnaire_symbol = round.nil? ? symbol : (symbol.to_s + round.to_s).to_sym
+    compute_weighted_score(questionnaire_symbol, assignment, scores)
+  end
+
+  def compute_weighted_score(symbol, assignment, scores)
+    aq = AssignmentQuestionnaire.find_by(assignment_id: assignment.id)
+    if scores[symbol][:scores][:avg].nil?
+      0
+    else
+      scores[symbol][:scores][:avg] * aq.questionnaire_weight / 100.0
     end
+  end
 
-    def compute_weighted_score(symbol, assignment, scores)
-      # aq = assignment_questionnaires.find_by(assignment_id: assignment.id)
-      aq = AssignmentQuestionnaire.find_by(assignment_id: assignment.id)
+  def true_false_items?
+    items.each { |question| return true if question.type == 'Checkbox' }
+    false
+  end
 
-      if scores[symbol][:scores][:avg].nil?
-        0
-      else
-        scores[symbol][:scores][:avg] * aq.questionnaire_weight / 100.0
-      end
-    end
-
-    # Does this questionnaire contain true/false items?
-    def true_false_items?
-      items.each { |question| return true if question.type == 'Checkbox' }
-      false
-    end
-
-  # Pre-calculates the sum of weights for all scored items (excludes SectionHeaders).
-  # Used by ResponseMap#review_grade to normalize scores per round without repeating the query.
+  # Sum of weights for scored items, excluding SectionHeaders.
   def total_item_weight
     items.reject { |i| i.question_type == 'SectionHeader' }.sum(&:weight)
   end
 
   def max_possible_score
-      results = Questionnaire.joins('INNER JOIN items ON items.questionnaire_id = questionnaires.id')
-                            .select('SUM(items.weight) * questionnaires.max_question_score as max_score')
-                            .where('questionnaires.id = ?', id)
-      results[0].max_score
-    end
+    results = Questionnaire.joins('INNER JOIN items ON items.questionnaire_id = questionnaires.id')
+                           .select('SUM(items.weight) * questionnaires.max_question_score as max_score')
+                           .where('questionnaires.id = ?', id)
+    results[0].max_score
   end
+end
