@@ -3,7 +3,7 @@
 class Questionnaire < ApplicationRecord
   belongs_to :instructor
   has_many :items, class_name: "Item", foreign_key: "questionnaire_id", dependent: :destroy # the collection of items associated with this Questionnaire
-  before_destroy :check_for_question_associations
+  before_destroy :any_item_associations?
 
   # Subclasses declare @print_name = '...' and inherit this reader automatically.
   class << self
@@ -31,41 +31,29 @@ class Questionnaire < ApplicationRecord
     errors.add(:name, 'Questionnaire names must be unique.') if results.present?
   end
 
-  # Duplicates a questionnaire along with its items and advice.
+  # Returns a new persisted copy of this questionnaire, including its items and their advice.
   def self.copy_questionnaire_details(params)
     orig_questionnaire = Questionnaire.find(params[:id])
-    items = Item.where(questionnaire_id: params[:id])
     questionnaire = orig_questionnaire.dup
     questionnaire.instructor_id = params[:instructor_id]
-    questionnaire.name = 'Copy of ' + orig_questionnaire.name
+    questionnaire.name = "Copy of #{orig_questionnaire.name}"
     questionnaire.created_at = Time.zone.now
     questionnaire.save!
-    items.each do |question|
-      new_question = question.dup
-      new_question.questionnaire_id = questionnaire.id
-      new_question.size = '50,3' if (new_question.is_a?(Criterion) || new_question.is_a?(TextResponse)) && new_question.size.nil?
-      new_question.save!
-      advice = QuestionAdvice.where(question_id: question.id)
-      next if advice.empty?
-
-      advice.each do |advice|
-        new_advice = advice.dup
-        new_advice.question_id = new_question.id
-        new_advice.save!
-      end
-    end
+    orig_questionnaire.items.each { |item| item.copy(questionnaire) }
     questionnaire
   end
 
-  def check_for_question_associations
-    if items.any?
-      raise ActiveRecord::DeleteRestrictionError.new("Cannot delete questionnaire because dependent items exist")
-    end
+  # Raises an error if the questionnaire has associated items, preventing deletion.
+  def any_item_associations?
+    return unless items.any?
+
+    raise ActiveRecord::DeleteRestrictionError,
+          'Cannot delete questionnaire because dependent items exist'
   end
 
   def as_json(options = {})
     super(options.merge({
-      only: %i[id name private min_item_score max_item_score created_at updated_at questionnaire_type instructor_id],
+      only: %i[id name private min_question_score max_question_score created_at updated_at questionnaire_type instructor_id],
       include: {
         instructor: { only: %i[name email fullname role] }
       }
@@ -88,14 +76,20 @@ class Questionnaire < ApplicationRecord
     'GlobalSurveyQuestionnaire'
   ].freeze
 
-  # Computes the weighted score for this questionnaire within an assignment,
-  # accounting for multi-round rubrics via a round suffix on the symbol.
+  # Returns this questionnaire's weighted contribution to an assignment's overall score.
+  # The scores hash (built by the assignment grading pipeline) is keyed by a symbol
+  # derived from the questionnaire subclass (e.g., :review). For multi-round rubrics,
+  # the round number is appended to the symbol (e.g., :review1, :review2) to
+  # distinguish separate rounds of the same rubric within one assignment.
   def get_weighted_score(assignment, scores)
     round = AssignmentQuestionnaire.find_by(assignment_id: assignment.id, questionnaire_id: id).used_in_round
     questionnaire_symbol = round.nil? ? symbol : (symbol.to_s + round.to_s).to_sym
     compute_weighted_score(questionnaire_symbol, assignment, scores)
   end
 
+  # Applies this questionnaire's weight percentage (stored in AssignmentQuestionnaire)
+  # to the average response score, producing the questionnaire's weighted contribution
+  # to the assignment grade. Returns 0 if no average score is available yet.
   def compute_weighted_score(symbol, assignment, scores)
     aq = AssignmentQuestionnaire.find_by(assignment_id: assignment.id, questionnaire_id: id)
     if scores[symbol][:scores][:avg].nil?
@@ -105,6 +99,7 @@ class Questionnaire < ApplicationRecord
     end
   end
 
+  # Does this questionnaire contain checkbox-type items?
   def checkbox_items?
     items.each { |question| return true if question.type == 'Checkbox' }
     false
@@ -115,10 +110,31 @@ class Questionnaire < ApplicationRecord
     items.reject { |i| i.question_type == 'SectionHeader' }.sum(&:weight)
   end
 
-  def max_possible_score
+  # Calculates the maximum raw score achievable on this questionnaire:
+  # (sum of all item weights) × max_item_score. This serves as the denominator
+  # when normalising a response's raw score to a percentage.
+  def max_possible_item_score_total
     results = Questionnaire.joins('INNER JOIN items ON items.questionnaire_id = questionnaires.id')
                            .select('SUM(items.weight) * questionnaires.max_question_score as max_score')
                            .where('questionnaires.id = ?', id)
     results[0].max_score
+  end
+
+  private
+
+  # Shared helper used by subclasses to collect submitted responses from a set of
+  # ResponseMaps that match a specific round. Extracts the inner map-iteration loop
+  # that would otherwise be duplicated across ReviewQuestionnaire and
+  # TeammateReviewQuestionnaire (and any future subclasses).
+  def filter_submitted_responses_for_round(maps, round)
+    responses = []
+    maps.each do |map|
+      next if map.responses.empty?
+
+      map.responses.each do |response|
+        responses << response if response.round == round && response.is_submitted
+      end
+    end
+    responses
   end
 end
