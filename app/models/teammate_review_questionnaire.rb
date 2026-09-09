@@ -2,7 +2,7 @@
 
 class TeammateReviewQuestionnaire < Questionnaire
   after_initialize :post_initialization
-  @print_name = 'Team Review Rubric'
+  @print_name = 'Teammate Review Rubric'
 
   def post_initialization
     self.display_type = 'Teammate Review'
@@ -17,13 +17,13 @@ class TeammateReviewQuestionnaire < Questionnaire
   end
 
   # Returns submitted responses for the given participant in a specific round.
-  def get_assessments_round_for(participant, round)
+  def get_assessments_for_round(participant, round)
     responses = []
     maps = TeammateReviewResponseMap.where(reviewer_id: participant.id)
     maps.each do |map|
-      next if map.response.empty?
+      next if map.responses.empty?
 
-      map.response.each do |response|
+      map.responses.each do |response|
         responses << response if response.round == round && response.is_submitted
       end
     end
@@ -31,7 +31,7 @@ class TeammateReviewQuestionnaire < Questionnaire
   end
 
   # True if any items are Criterion type (rendered as percentage sliders in the UI).
-  def has_percentage_questions?
+  def has_criterion_items?
     items.any? { |item| item.question_type == 'Criterion' }
   end
 end

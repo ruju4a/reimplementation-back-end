@@ -18,7 +18,7 @@ describe TeammateReviewQuestionnaire, type: :model do
 
   describe '#print_name' do
     it 'returns the correct print name' do
-      expect(TeammateReviewQuestionnaire.print_name).to eq('Team Review Rubric')
+      expect(TeammateReviewQuestionnaire.print_name).to eq('Teammate Review Rubric')
     end
   end
 
@@ -43,19 +43,19 @@ describe TeammateReviewQuestionnaire, type: :model do
     end
   end
 
-  describe '#get_assessments_round_for' do
+  describe '#get_assessments_for_round' do
     it 'returns an empty array when the participant has no TeammateReviewResponseMaps' do
       participant = double('participant', id: 99)
       allow(TeammateReviewResponseMap).to receive(:where).with(reviewer_id: 99).and_return([])
-      expect(questionnaire.get_assessments_round_for(participant, 1)).to eq([])
+      expect(questionnaire.get_assessments_for_round(participant, 1)).to eq([])
     end
   end
 
-  describe '#has_percentage_questions?' do
+  describe '#has_criterion_items?' do
     context 'when there are no Criterion items' do
       it 'returns false' do
         allow(questionnaire).to receive(:items).and_return([])
-        expect(questionnaire.has_percentage_questions?).to be false
+        expect(questionnaire.has_criterion_items?).to be false
       end
     end
 
@@ -63,7 +63,7 @@ describe TeammateReviewQuestionnaire, type: :model do
       it 'returns true' do
         criterion_item = double('item', question_type: 'Criterion')
         allow(questionnaire).to receive(:items).and_return([criterion_item])
-        expect(questionnaire.has_percentage_questions?).to be true
+        expect(questionnaire.has_criterion_items?).to be true
       end
     end
 
@@ -71,7 +71,7 @@ describe TeammateReviewQuestionnaire, type: :model do
       it 'returns false' do
         text_item = double('item', question_type: 'TextArea')
         allow(questionnaire).to receive(:items).and_return([text_item])
-        expect(questionnaire.has_percentage_questions?).to be false
+        expect(questionnaire.has_criterion_items?).to be false
       end
     end
   end

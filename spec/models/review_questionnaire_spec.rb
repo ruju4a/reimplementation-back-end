@@ -43,11 +43,11 @@ describe ReviewQuestionnaire, type: :model do
     end
   end
 
-  describe '#get_assessments_round_for' do
+  describe '#get_assessments_for_round' do
     it 'returns nil if the participant has no team' do
       participant = double('participant')
       allow(AssignmentTeam).to receive(:team).with(participant).and_return(nil)
-      expect(questionnaire.get_assessments_round_for(participant, 1)).to be_nil
+      expect(questionnaire.get_assessments_for_round(participant, 1)).to be_nil
     end
   end
 

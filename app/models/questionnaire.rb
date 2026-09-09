@@ -2,7 +2,7 @@
 
 class Questionnaire < ApplicationRecord
   belongs_to :instructor
-  has_many :items, class_name: "Item", foreign_key: "questionnaire_id", dependent: :destroy
+  has_many :items, class_name: "Item", foreign_key: "questionnaire_id", dependent: :destroy # the collection of items associated with this Questionnaire
   before_destroy :check_for_question_associations
 
   # Subclasses declare @print_name = '...' and inherit this reader automatically.
@@ -59,24 +59,23 @@ class Questionnaire < ApplicationRecord
 
   def check_for_question_associations
     if items.any?
-      raise ActiveRecord::DeleteRestrictionError.new("Cannot delete record because dependent items exist")
+      raise ActiveRecord::DeleteRestrictionError.new("Cannot delete questionnaire because dependent items exist")
     end
   end
 
   def as_json(options = {})
     super(options.merge({
-      only: %i[id name private min_question_score max_question_score created_at updated_at questionnaire_type instructor_id],
+      only: %i[id name private min_item_score max_item_score created_at updated_at questionnaire_type instructor_id],
       include: {
-        instructor: { only: %i[name email fullname password role] }
+        instructor: { only: %i[name email fullname role] }
       }
     })).tap do |hash|
       hash['instructor'] ||= { id: nil, name: nil }
     end
   end
 
-  DEFAULT_MIN_QUESTION_SCORE = 0
-  DEFAULT_MAX_QUESTION_SCORE = 5
-  DEFAULT_QUESTIONNAIRE_URL = 'http://www.courses.ncsu.edu/csc517'.freeze
+  DEFAULT_MIN_ITEM_SCORE = 0  # The lowest score that a reviewer can assign to any questionnaire item
+  DEFAULT_MAX_ITEM_SCORE = 5  # The highest score that a reviewer can assign to any questionnaire item
 
   QUESTIONNAIRE_TYPES = [
     'ReviewQuestionnaire',
@@ -98,7 +97,7 @@ class Questionnaire < ApplicationRecord
   end
 
   def compute_weighted_score(symbol, assignment, scores)
-    aq = AssignmentQuestionnaire.find_by(assignment_id: assignment.id)
+    aq = AssignmentQuestionnaire.find_by(assignment_id: assignment.id, questionnaire_id: id)
     if scores[symbol][:scores][:avg].nil?
       0
     else
@@ -106,7 +105,7 @@ class Questionnaire < ApplicationRecord
     end
   end
 
-  def true_false_items?
+  def checkbox_items?
     items.each { |question| return true if question.type == 'Checkbox' }
     false
   end
